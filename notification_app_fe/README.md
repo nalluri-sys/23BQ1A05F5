@@ -9,4 +9,10 @@ npm install
 npm run dev
 ```
 
+The dev server runs on `http://localhost:3000`.
+
 The app expects the notifications API to be reachable; set the API base URL in `src/config.js` or call the API directly from the UI.
+
+Testing without the API:
+- Open `http://localhost:3000/?mock=1` to use embedded mock notifications.
+
