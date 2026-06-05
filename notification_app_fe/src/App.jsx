@@ -29,6 +29,8 @@ export default function App() {
   const [typeFilter, setTypeFilter] = useState('All')
   const [hasNext, setHasNext] = useState(false)
   const [readSet, setReadSet] = useState(new Set())
+  const [showPriority, setShowPriority] = useState(false)
+  const [priorityLimit, setPriorityLimit] = useState(5)
 
   const useMock = typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('mock') === '1'
 
@@ -66,6 +68,14 @@ export default function App() {
   }, [page, limit, typeFilter])
 
   useEffect(() => {
+    // load persisted read state
+    try {
+      const raw = localStorage.getItem('readNotifications')
+      if (raw) {
+        const arr = JSON.parse(raw)
+        setReadSet(new Set(arr))
+      }
+    } catch (e) { /* ignore */ }
     fetchPage()
   }, [fetchPage])
 
@@ -74,8 +84,33 @@ export default function App() {
       const copy = new Set(prev)
       if (copy.has(id)) copy.delete(id)
       else copy.add(id)
+      // persist
+      try { localStorage.setItem('readNotifications', JSON.stringify(Array.from(copy))) } catch (e) {}
       return copy
     })
+  }
+
+  // compute priority top-N from currently fetched notifications (or mock data)
+  function computePriority(items) {
+    const weights = { Placement: 3.0, Result: 2.0, Event: 1.0 }
+    const now = new Date()
+    function parseTs(s) {
+      try {
+        // try YYYY-MM-DD HH:MM:SS
+        return new Date(s.replace(' ', 'T') + 'Z')
+      } catch (e) { return now }
+    }
+    return items
+      .map((it) => {
+        const wt = weights[it.Type] || 1.0
+        const ts = it.Timestamp ? parseTs(it.Timestamp) : now
+        const ageHours = Math.max(0, (now - ts) / 3600000)
+        const recency = 1 + 1 / (1 + ageHours)
+        return { score: wt * recency, item: it }
+      })
+      .sort((a, b) => b.score - a.score)
+      .slice(0, priorityLimit)
+      .map((s) => s.item)
   }
 
   return (
@@ -114,12 +149,30 @@ export default function App() {
             <MenuItem value={20}>20</MenuItem>
           </Select>
         </FormControl>
+
+          <FormControl size="small">
+            <InputLabel id="priority-limit-label">Priority N</InputLabel>
+            <Select
+              labelId="priority-limit-label"
+              value={priorityLimit}
+              label="Priority N"
+              onChange={(e) => setPriorityLimit(Number(e.target.value))}
+            >
+              <MenuItem value={5}>5</MenuItem>
+              <MenuItem value={10}>10</MenuItem>
+              <MenuItem value={20}>20</MenuItem>
+            </Select>
+          </FormControl>
+
+          <Button variant={showPriority ? 'contained' : 'outlined'} onClick={() => setShowPriority((s) => !s)}>
+            {showPriority ? 'Show All' : 'Show Priority'}
+          </Button>
       </Stack>
 
       {loading && <Typography>Loading...</Typography>}
 
       <List>
-        {notifs.map((n) => {
+        {(showPriority ? computePriority(notifs) : notifs).map((n) => {
           const isRead = readSet.has(n.ID)
           return (
             <ListItem key={n.ID} divider sx={{ opacity: isRead ? 0.6 : 1.0 }}>
